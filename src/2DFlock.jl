@@ -7,9 +7,7 @@
 
 using Agents, LinearAlgebra, Random, GLMakie, InteractiveDynamics
 
-@agent Bird ContinuousAgent{2} begin
-    θ::Float64 # the angle of the birds trajectory
-end
+@agent VicsekParticle ContinuousAgent{2} begin end
 
 # The function `initialize_model` generates birds and returns a model object using default values.
 function initialize_model(;
@@ -30,36 +28,40 @@ function initialize_model(;
         :step_size => step_size
     )
 
-    model = AgentBasedModel(Bird, space2d; properties = properties, scheduler = Schedulers.fastest, rng)
+    model = AgentBasedModel(VicsekParticle, space2d; properties = properties, scheduler = Schedulers.fastest, rng)
 
     for _ in 1:n_birds
-        rand_θ = rand(model.rng) * 2π .- π # rand vec between [-π,π]
-        vel = Tuple(rand(model.rng, 2) * 2 .- 1)
-        add_agent!(model, vel, rand_θ)
+        vel = normalize((rand(model.rng, 2) * 2.0) .- 1.0)
+        add_agent!(model, Tuple(vel))
     end
 
     return model
+
 end
 
 # ## Defining the agent_step!
 # `agent_step!` is the primary function called for each step and computes velocity
-function agent_step!(bird, model)
-    ## Obtain the ids of neighbors within the bird's visual distance
-    neighbour_ids = nearby_ids(bird, model, model.r)
-    ## Calculate the mean velocity of neighbours
-    mean_θ = [cos(bird.θ),sin(bird.θ)]
+function agent_step!(particle, model)
+    ## Obtain the ids of neighbors within the radius 
+    neighbour_ids = nearby_ids(particle, model, model.r)
+
+    ## Calculate the mean velocity of neibouring particles 
+    sum_vel = [particle.vel[1],particle.vel[2]]
     for id in neighbour_ids
-        mean_θ[1] += cos(model[id].θ)
-        mean_θ[2] += sin(model[id].θ)
+        sum_vel += [model[id].vel[1],model[id].vel[2]]
     end
-    mean_θ = atan(mean_θ[2], mean_θ[1])
+
+    angle = atan(sum_vel[2], sum_vel[1])
     # add some noise to the resulting angle
-    noise = (rand(model.rng) * (2 * model.η) - model.η) 
-    mean_θ += noise
+    noise = (rand(model.rng) * 2.0 .- 1) * model.η
+    angle += noise
+
+    mean_vel = [cos(angle), sin(angle)]
+
     # set the velocity
-    bird.vel = (cos(mean_θ),sin(mean_θ))
+    particle.vel = Tuple(mean_vel)
     
-    move_agent!(bird, model, model.step_size)
+    move_agent!(particle, model, model.step_size)
 end
 
 model = initialize_model(;
@@ -72,7 +74,6 @@ model = initialize_model(;
 
 abmvideo(
     "flocking.mp4", model, agent_step!;
-    #am = bird_marker,
     framerate = 30, frames = 300,
     title = "Flocking"
 )
@@ -93,6 +94,6 @@ figure, plot_data = abmexploration(
     params = parange,
     as = 10,
     adata, alabels,
-
 )
+
 figure
