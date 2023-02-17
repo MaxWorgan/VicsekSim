@@ -56,10 +56,8 @@ function agent_step!(particle, model)
     noise = (rand(model.rng) * 2.0 .- 1) * model.η
     angle += noise
 
-    mean_vel = [cos(angle), sin(angle)]
-
     # set the velocity
-    particle.vel = Tuple(mean_vel)
+    particle.vel = (cos(angle), sin(angle))
     
     move_agent!(particle, model, model.step_size)
 end
