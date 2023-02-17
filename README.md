@@ -1,11 +1,11 @@
-# FlockingSim
+# VicsekSim
+
+A testbed project for exploring different ways to measure the complexity / emergent dynamics of a highly simplified flocking model first described by [Vicsek et al](https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.75.1226).
+
+
 
 This code base is using the [Julia Language](https://julialang.org/) and
 [DrWatson](https://juliadynamics.github.io/DrWatson.jl/stable/)
-to make a reproducible scientific project named
-> FlockingSim
-
-It is authored by Max Worgan.
 
 To (locally) reproduce this project, do the following:
 
@@ -25,6 +25,6 @@ everything should work out of the box, including correctly finding local paths.
 You may notice that most scripts start with the commands:
 ```julia
 using DrWatson
-@quickactivate "FlockingSim"
+@quickactivate "VicsekSim"
 ```
 which auto-activate the project and enable local path handling from DrWatson.
