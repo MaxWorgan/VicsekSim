@@ -1,4 +1,4 @@
-name = "FlockingSim"
+name = "VicsekSim"
 authors = ["Max Worgan"]
 
 [deps]
@@ -7,6 +7,7 @@ CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 InteractiveDynamics = "ec714cd0-5f51-11eb-0b6e-452e7367ff84"
+ProfileView = "c46f51b8-102a-5cf2-8d2c-8597cb0e0da7"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]

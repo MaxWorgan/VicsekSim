@@ -1,5 +1,5 @@
 using DrWatson, Test
-@quickactivate "FlockingSim"
+@quickactivate "VicsekSim"
 
 # Here you include files using `srcdir`
 # include(srcdir("file.jl"))
