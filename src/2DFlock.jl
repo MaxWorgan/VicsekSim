@@ -5,33 +5,35 @@
 using Distributed
 addprocs(8)
 
-@everywhere begin
+# @everywhere begin
     using Agents, LinearAlgebra, Random, GLMakie, InteractiveDynamics
     using Statistics
     using Graphs
     using Colors
     using ColorSchemes
     using DataStructures
-end
+    using CSV
+    using DataFrames
+# end
 
 using Plotly
 using StatsPlots
 
 
-@everywhere include("Measurements.jl")
-@everywhere include("ViscekModel.jl")
+include("Measurements.jl")
+include("ViscekModel.jl")
 
 
 model = initialize_model(;
-    n_birds=3000,
-    step_size=0.15,
-    extent=(50, 50),
-    η=0.2,
+    n_birds=100,
+    step_size=0.02,
+    extent=(2, 2),
+    η=0.15,
     seed=12345,
-    r=0.5)
+    r=0.05)
 
-mdata = [calculate_order, calculate_fractal_sevcik_graph_window]
-mlabels = ["Order", "Fractal Graph Window"]#, "Edit Distance"]
+mdata = [calculate_order]#, calculate_fractal_sevcik_graph_window]
+mlabels = ["Order"]#, "Fractal Graph Window"]#, "Edit Distance"]
 
 parange = Dict(
     :step_size => 0.01:0.01:1.0,
@@ -48,18 +50,27 @@ figure, plot_data = abmexploration(
     model_step!,
     params=parange,
     ac = (x -> "0x" * hex(color_scheme[(atan(x.vel[2], x.vel[1]) + π) / 2π])),
-    as = 5,
+    as = 10,
     mdata, mlabels,
 )
 
 figure
 model.properties
 
-_, model_df = run!(model, dummystep, model_step!, 3000; mdata)
+adata = [a -> a.vel[1], a->a.vel[2]]
+
+a_Test, _ = run!(model, dummystep, model_step!, 1; adata )
+
+agent_df, _ = run!(model, dummystep, model_step!, 1000000; adata )
+
+agent_df
+
+CSV.write("data/sims/vicsek-eta0.15-r0.05-step0.02.csv", agent_df; header=[:step, :id, :x, :y])
 
 @df model_df StatsPlots.plot(:step, :calculate_fractal_sevcik_graph_window)
 
-using Plots
+df = DataFrame(CSV.File("data/sims/vicsek-eta0.15-r0.05-step0.02.csv";types=Float32))
+
 model_df
 
 fig, _, obs = abmplot(model; ac = (x -> x.backbone))
@@ -69,19 +80,32 @@ obs
 
 fig
 
-
 params = Dict(
-    :η => collect(0.0:0.1:1.0)
+    :η => collect(0.0:0.1:1.0),
+    :n_birds=>100,
+    :step_size=>0.02,
+    :extent=>(2, 2),
+    :seed=>12345,
+    :r=>0.05
 )
 
-_, mdf = paramscan(params, initialize_model; model_step!, mdata, n=3000, parallel = true, showprogress=true)
+_, mdf = paramscan(params, initialize_model; model_step!, mdata, n=10000, parallel = true, showprogress=true)
 
 mdf
 palette(:gnuplot2)
 using PlotlyJS
 @df filter!(row -> row.step > 100, mdf) StatsPlots.plot(mdf.step, mdf.calculate_fractal_sevcik_graph_window, group=mdf.η)
 
-PlotlyJS.savefig(PlotlyJS.plot(mdf, x=:step, y=:calculate_fractal_sevcik_graph_window, color=:η), "plots/fractal_window.png")
+# PlotlyJS.savefig(
+PlotlyJS.plot(mdf, x=:step, y=:calculate_fractal_sevcik_graph_window,
+    color=:η,
+    linewidth=1,
+    thickness_scaling=1,
+    dpi=900,
+    line=attr(width=0.5),
+    colormap=cgrad(ColorSchemes.winter, 10)
+)
+    # , "plots/fractal_window2.png")
 
 
 test = @chain mdf begin

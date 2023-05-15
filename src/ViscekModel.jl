@@ -15,16 +15,16 @@ end
 
 # The function `initialize_model` generates birds and returns a model object using default values.
 function initialize_model(;
-    n_birds=3000,     # the number of birds/agents in the sim
+    n_birds=300,     # the number of birds/agents in the sim
     seed=12345,    # random seed for repeatable results
     step_size=0.15,     # the step_size of the implementation
-    extent=(50, 50), # the size of the 'world'
+    extent=(5, 5), # the size of the 'world'
     η=0.01,     # the amount of noise
     r=0.2       # the size of each birds neighbourhood
 )
     rng = Random.MersenneTwister(seed)
 
-    space2d = ContinuousSpace(extent; spacing=r / 1.5)
+    space2d = ContinuousSpace(extent; spacing=r / 2)
 
     properties = ParticleParameters(r=r, η=η, step_size=step_size, graph=Graph(n_birds))
 
@@ -42,8 +42,8 @@ end
 function model_step!(model)
 
     # model.properties.prev_graph = copy(model.properties.graph)
-    push!(model.properties.graph_window, flatten_graph(model.properties.graph))
-    model.properties.graph = SimpleGraph(length(model.agents))
+    #push!(model.properties.graph_window, flatten_graph(model.properties.graph))
+    # model.properties.graph = SimpleGraph(length(model.agents))
     for a in Schedulers.fastest(model)
         agent_step!(model.agents[a],model)
     end
@@ -57,7 +57,7 @@ function agent_step!(particle, model)
     ## Calculate the mean velocity of neighbours
     mean_vel = [particle.vel...]
     for id in neighbour_ids
-        add_edge!(model.graph, particle.id, id)
+    #    add_edge!(model.graph, particle.id, id)
         mean_vel += [model[id].vel...]
     end
     mean_θ = atan(mean_vel[2], mean_vel[1])
