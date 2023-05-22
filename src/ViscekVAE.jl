@@ -59,13 +59,13 @@ function create_vae()
 
     # 60x200xn
     encoder_features = Chain(
-        Conv((4,), 400 => 4000, relu; pad=SamePad()),
+        Conv((8,), 400 => 4000, relu; pad=SamePad()),
         MaxPool((2,)),
-        Conv((4,), 4000 => 2000, relu; pad=SamePad()),
+        Conv((8,), 4000 => 2000, relu; pad=SamePad()),
         MaxPool((2,)),
         Conv((4,), 2000 => 1000, relu; pad=SamePad()),
         MaxPool((3,)),
-        Conv((2,), 1000 => 250, relu; pad=SamePad()),
+        Conv((4,), 1000 => 250, relu; pad=SamePad()),
         Conv((2,), 250 => 25, relu; pad=SamePad()),
         Conv((2,), 25 => 10, relu; pad=SamePad()),
         Flux.flatten,
@@ -81,13 +81,13 @@ function create_vae()
         (x -> reshape(x, 5, 10, :)),
         ConvTranspose((2,), 10 => 25, relu; pad=SamePad()),
         ConvTranspose((2,), 25 => 250, relu; pad=SamePad()),
-        ConvTranspose((2,), 250 => 1000, relu; pad=SamePad()),
+        ConvTranspose((4,), 250 => 1000, relu; pad=SamePad()),
         Upsample((3,)),
         ConvTranspose((4,), 1000 => 2000, relu; pad=SamePad()),
         Upsample((2,)),
-        ConvTranspose((4,), 2000 => 4000, relu; pad=SamePad()),
+        ConvTranspose((8,), 2000 => 4000, relu; pad=SamePad()),
         Upsample((2,)),
-        ConvTranspose((4,), 4000 => 400; pad=SamePad()),
+        ConvTranspose((8,), 4000 => 400; pad=SamePad()),
     )
     return (encoder_μ, encoder_logvar, decoder)
 
@@ -164,7 +164,7 @@ first(train_loader)
 
 close(logger)
 
-save_model(Chain(encoder_μ, encoder_logvar, decoder), "vicsek-model5")
+save_model(Chain(encoder_μ, encoder_logvar, decoder), "vicsek-model6")
 
 file_path = "$(datadir())/sims/$(get_config(logger, "data_set")).csv"
 
