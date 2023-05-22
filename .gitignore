@@ -5,8 +5,9 @@
 # Folders to ignore - files may be too large, too many, etc. NOTE: EDIT IF NEEDED.
 /data
 /videos
-/notebooks
 /_research
+/wandb
+/models
 
 ################################################################################
 #                                    Julia                                     #

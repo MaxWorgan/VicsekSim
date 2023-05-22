@@ -5,14 +5,15 @@ using Flux.Data: DataLoader
 using Flux, DataFrames, StatsBase,MLDataPattern, CUDA, PlotlyJS, LegolasFlux, CSV
 using Wandb, Dates,Logging
 
+include("Measurements.jl")
 ## Start a new run, tracking hyperparameters in config
 logger = WandbLogger(
    project = "Vicsek-VAE",
    name = "vicsek-training-$(now())",
    config = Dict(
-      "η" => 0.00001,
+      "η" => 0.0000001,
       "batch_size" => 48,
-      "data_set" => "data_test"
+      "data_set" => "vicsek-medium",
    ),
 )
 
@@ -33,13 +34,13 @@ function reconstruction_loss(x̂, x)
     return rec
 end
 
-function vae_loss(encoder_μ, encoder_logvar, decoder, x)
+function vae_loss(encoder_μ, encoder_logvar, decoder, x;dev=gpu)
     len = size(x)[end]
     @assert len != 0
     # Forward propagate through mean encoder and std encoders
     μ = encoder_μ(x)
     logσ = encoder_logvar(x)
-    z = μ + gpu(randn(Float32, size(logσ))) .* exp.(logσ)
+    z = μ + dev(randn(Float32, size(logσ))) .* exp.(logσ)
     # Reconstruct from latent sample
     x̂ = decoder(z)
     
@@ -58,15 +59,15 @@ function create_vae()
 
     # 60x200xn
     encoder_features = Chain(
-        Conv((9,), 200 => 2000, relu; pad=SamePad()),
+        Conv((4,), 400 => 4000, relu; pad=SamePad()),
         MaxPool((2,)),
-        Conv((5,), 2000 => 1500, relu; pad=SamePad()),
+        Conv((4,), 4000 => 2000, relu; pad=SamePad()),
         MaxPool((2,)),
-        Conv((5,), 1500 => 750, relu; pad=SamePad()),
+        Conv((4,), 2000 => 1000, relu; pad=SamePad()),
         MaxPool((3,)),
-        Conv((3,), 750 => 250, relu; pad=SamePad()),
-        Conv((3,), 250 => 25, relu; pad=SamePad()),
-        Conv((3,), 25 => 10, relu; pad=SamePad()),
+        Conv((2,), 1000 => 250, relu; pad=SamePad()),
+        Conv((2,), 250 => 25, relu; pad=SamePad()),
+        Conv((2,), 25 => 10, relu; pad=SamePad()),
         Flux.flatten,
         Dense(50, 10, relu)
     )
@@ -78,33 +79,27 @@ function create_vae()
     decoder = Chain(
         Dense(10, 50, relu),
         (x -> reshape(x, 5, 10, :)),
-        ConvTranspose((3,), 10 => 25, relu; pad=SamePad()),
-        ConvTranspose((3,), 25 => 250, relu; pad=SamePad()),
-        ConvTranspose((3,), 250 => 750, relu; pad=SamePad()),
+        ConvTranspose((2,), 10 => 25, relu; pad=SamePad()),
+        ConvTranspose((2,), 25 => 250, relu; pad=SamePad()),
+        ConvTranspose((2,), 250 => 1000, relu; pad=SamePad()),
         Upsample((3,)),
-        ConvTranspose((5,), 750 => 1500, relu; pad=SamePad()),
+        ConvTranspose((4,), 1000 => 2000, relu; pad=SamePad()),
         Upsample((2,)),
-        ConvTranspose((5,), 1500 => 2000, relu; pad=SamePad()),
+        ConvTranspose((4,), 2000 => 4000, relu; pad=SamePad()),
         Upsample((2,)),
-        ConvTranspose((9,), 2000 => 200; pad=SamePad()),
+        ConvTranspose((4,), 4000 => 400; pad=SamePad()),
     )
     return (encoder_μ, encoder_logvar, decoder)
 
 end
 
-function save_model(m, epoch, loss)
-    model_row = LegolasFlux.ModelV1(; weights = fetch_weights(cpu(m)),architecture_version=1, loss=loss)
-    write_model_row("1d_100_model-vae-$epoch-$loss.arrow", model_row)
+function save_model(m, name)
+    model_row = LegolasFlux.ModelV1(; weights = fetch_weights(cpu(m)),architecture_version=1)
+    write_model_row("$name.arrow", model_row)
 end
-
-function rearrange_1D(x)
-    permutedims(cat(x..., dims=3), [2,1,3])
-end
-
-
 
 function train!(encoder_μ, encoder_logvar, decoder, train, validate, opt_enc_μ, opt_enc_logvar, opt_dec; num_epochs=100, dev=Flux.gpu)
-    for e = 1:num_epochs
+    for e in 1:num_epochs
         for x in train
             x = x |> dev
             # pullback function returns the result (loss) and a pullback operator (back)
@@ -121,53 +116,83 @@ function train!(encoder_μ, encoder_logvar, decoder, train, validate, opt_enc_μ
             Flux.update!(opt_dec, decoder, grad_dec)
 
         end
-        for y in validate
-            y = y |> dev
-            validate_loss = vae_loss(encoder_μ, encoder_logvar, decoder, y)
-            @info "metrics" validate_loss = validate_loss
-        end
+        # for y in validate
+        #     y = y |> dev
+        #     validate_loss = vae_loss(encoder_μ, encoder_logvar, decoder, y)
+        #     @info "metrics" validate_loss = validate_loss
+        # end
+
+        @info "metrics" epoch = e
     end
 end
- 
-
-function normalise(M) 
-    min_m = minimum(M)
-    max_m = maximum(M)
-    return (M .- min_m) ./ (max_m - min_m)
-end
-
 
 function load_data(file_path, window_size)
     
-    df           = DataFrame(CSV.File(file_path; types=Float32));
-    flattened    = reduce(vcat, eachrow(Matrix(df[!, [:x, :y]])))
-
-    windowed     = slidingwindow(reshape(flattened, (200, :)), window_size, stride=1)
-
-    ts, vs       = splitobs(shuffleobs(windowed), 0.7)
+    df           = DataFrame(CSV.File(file_path; types=Float32))
+    ndf          = select(df,:,[:x,:y] => ((x,y) -> calculate_toroidal_coords.(x,y)) => AsTable)
+    flattened    = reduce(vcat, eachrow(Matrix(ndf[!, [:x1,:x2,:x3,:x4]])))
+    windowed     = slidingwindow(reshape(flattened, (400, :)), window_size, stride=1)
+    ts, vs       = splitobs(windowed, 0.7)
     ts_length    = length(ts)
     vs_length    = length(vs)
-
-    train_set    = permutedims(reshape(reduce(hcat, ts), (200,window_size,ts_length)), (2,1,3))
-    validate_set = permutedims(reshape(reduce(hcat, vs), (200,window_size,vs_length)), (2,1,3))
-
-    train_loader    = DataLoader(mapslices(normalise,train_set; dims=3); batchsize=48,shuffle=true)
-    validate_loader = DataLoader(mapslices(normalise,validate_set; dims=3); batchsize=48,shuffle=true)
+    train_set    = permutedims(reshape(reduce(hcat, ts), (400,window_size,ts_length)), (2,1,3))
+    validate_set = permutedims(reshape(reduce(hcat, vs), (400,window_size,vs_length)), (2,1,3))
+    train_loader = DataLoader(train_set; batchsize=48,shuffle=true)
+    validate_loader = DataLoader(validate_set; batchsize=48,shuffle=true)
 
     (train_loader, validate_loader)
 
 end
 
-
-
 window_size = 60
 
-(train_loader, validate_loader) = load_data("$(datadir())/sims/vicsek-eta0.15-r0.05-step0.02.csv", window_size)
+(train_loader, validate_loader) = load_data("$(datadir())/sims/$(get_config(logger, "data_set")).csv", window_size)
 
-num_epochs  = 250
+num_epochs  = 100
 
 encoder_μ, encoder_logvar, decoder = create_vae() |> gpu
 
-train!(encoder_μ, encoder_logvar, decoder, train_loader, validate_loader, Flux.Optimise.ADAM(get_config(logger, "η")), num_epochs=num_epochs)
+# ADAM optimizer
+η = get_config(logger, "η")
+opt_enc_μ = Flux.setup(Adam(η), encoder_μ)
+opt_enc_logvar = Flux.setup(Adam(η), encoder_logvar)
+opt_dec = Flux.setup(Adam(η), decoder)
+
+train!(encoder_μ, encoder_logvar, decoder, train_loader, validate_loader, opt_enc_μ,opt_enc_logvar,opt_dec, num_epochs=num_epochs)
+
+first(train_loader)
 
 close(logger)
+
+save_model(Chain(encoder_μ, encoder_logvar, decoder), "vicsek-model5")
+
+file_path = "$(datadir())/sims/$(get_config(logger, "data_set")).csv"
+
+
+
+
+
+x = first(train_loader)
+
+plot(x[1,:,1];seriestype=:scatter)
+
+
+z = mapslices(x -> reverseProjectFromCliffordTorus(x[1],x[2],x[3]), y; dims=1)
+
+y = reshape(x[60,:,1], (3,100))
+maptest = Iterators.map(z -> reverseProjectFromCliffordTorus(z[1],z[3],z[3]),eachcol(y)) 
+xs = Iterators.map(z -> z[1], maptest) |> collect
+ys = Iterators.map(z -> z[2], maptest) |> collect
+
+plot(
+    scatter(x=xs,y=ys, mode="markers"),
+    Layout(xaxis_range=[0,1], yaxis_range=[0,1])
+    )
+
+plot(
+    scatter(x = df[101:200,:x],
+            y = df[101:200,:y],
+            mode="markers"),
+    Layout(xaxis_range=[0,1], yaxis_range=[0,1])
+)
+
