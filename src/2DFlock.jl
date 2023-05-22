@@ -2,19 +2,18 @@
 # is updated to align to the average of its neighbours direction
 # of travel. Additionally there is controllable noise added into
 # the velocity calculation.
-using Distributed
-addprocs(8)
+using DrWatson
+quickactivate(@__DIR__)
 
-# @everywhere begin
-    using Agents, LinearAlgebra, Random, GLMakie, InteractiveDynamics
+    using Agents, LinearAlgebra, Random, InteractiveDynamics
     using Statistics
     using Graphs
     using Colors
     using ColorSchemes
     using DataStructures
     using CSV
+    # using GLMakie
     using DataFrames
-# end
 
 using Plotly
 using StatsPlots
@@ -27,9 +26,9 @@ include("ViscekModel.jl")
 model = initialize_model(;
     n_birds=100,
     step_size=0.02,
-    extent=(2, 2),
+    extent=(1,1),
     η=0.15,
-    seed=12345,
+    seed=12350,
     r=0.05)
 
 mdata = [calculate_order]#, calculate_fractal_sevcik_graph_window]
@@ -57,15 +56,15 @@ figure, plot_data = abmexploration(
 figure
 model.properties
 
-adata = [a -> a.vel[1], a->a.vel[2]]
+adata = [a -> a.pos[1], a->a.pos[2]]
 
 a_Test, _ = run!(model, dummystep, model_step!, 1; adata )
 
-agent_df, _ = run!(model, dummystep, model_step!, 1000000; adata )
+agent_df, _ = run!(model, dummystep, model_step!, 100000; adata )
 
 agent_df
 
-CSV.write("data/sims/vicsek-eta0.15-r0.05-step0.02.csv", agent_df; header=[:step, :id, :x, :y])
+CSV.write("$(datadir())/sims/vicsek-100-5.csv", agent_df; header=[:step, :id, :x, :y])
 
 @df model_df StatsPlots.plot(:step, :calculate_fractal_sevcik_graph_window)
 

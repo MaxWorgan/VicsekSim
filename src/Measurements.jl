@@ -1,5 +1,7 @@
 
 using LempelZiv
+using Graphs
+using Agents
 
 include("Util.jl")
 
@@ -124,4 +126,38 @@ function calculate_fractal_sevcik_angle(model)
 
     return 1.0 - (sfd  - 1.0)
 
+end
+
+function calculate_toroidal_coords(x,y)
+
+    v1 = sin(x/2pi)
+    v2 = cos(x/2pi)
+    v3 = sin(y/2pi)
+    v4 = cos(y/2pi)
+
+    return (v1,v2,v3,v4)
+
+end
+
+function calculate_2D_coords(x,y,z,w)
+    
+    v1 = atan(x, y) / 2pi
+    v2 = atan(z, w) / 2pi
+
+    return (v1, v2)
+    
+end
+
+
+function projectToCliffordTorus(x, y)
+    R = 2
+    r = 1
+    theta = 2 * pi * x
+    phi = 2 * pi * y
+    toroidal_radius = r * cos(theta)
+    phi = phi + toroidal_radius / R
+    x = (R + r * cos(theta)) * cos(phi)
+    y = (R + r * cos(theta)) * sin(phi)
+    z = r * sin(theta)
+    return (x, y, z)
 end
