@@ -13,7 +13,7 @@ logger = WandbLogger(
    config = Dict(
       "η" => 0.0000001,
       "batch_size" => 48,
-      "data_set" => "vicsek-medium",
+      "data_set" => "vicsek-100-7.csv",
    ),
 )
 
@@ -59,14 +59,14 @@ function create_vae()
 
     # 60x200xn
     encoder_features = Chain(
-        Conv((8,), 400 => 4000, relu; pad=SamePad()),
+        Conv((16,), 400 => 4000, relu; pad=SamePad()),
         MaxPool((2,)),
-        Conv((8,), 4000 => 2000, relu; pad=SamePad()),
+        Conv((12,), 4000 => 2000, relu; pad=SamePad()),
         MaxPool((2,)),
-        Conv((4,), 2000 => 1000, relu; pad=SamePad()),
+        Conv((8,), 2000 => 1000, relu; pad=SamePad()),
         MaxPool((3,)),
-        Conv((4,), 1000 => 250, relu; pad=SamePad()),
-        Conv((2,), 250 => 25, relu; pad=SamePad()),
+        Conv((6,), 1000 => 250, relu; pad=SamePad()),
+        Conv((4,), 250 => 25, relu; pad=SamePad()),
         Conv((2,), 25 => 10, relu; pad=SamePad()),
         Flux.flatten,
         Dense(50, 10, relu)
@@ -80,14 +80,14 @@ function create_vae()
         Dense(10, 50, relu),
         (x -> reshape(x, 5, 10, :)),
         ConvTranspose((2,), 10 => 25, relu; pad=SamePad()),
-        ConvTranspose((2,), 25 => 250, relu; pad=SamePad()),
-        ConvTranspose((4,), 250 => 1000, relu; pad=SamePad()),
+        ConvTranspose((4,), 25 => 250, relu; pad=SamePad()),
+        ConvTranspose((6,), 250 => 1000, relu; pad=SamePad()),
         Upsample((3,)),
-        ConvTranspose((4,), 1000 => 2000, relu; pad=SamePad()),
+        ConvTranspose((8,), 1000 => 2000, relu; pad=SamePad()),
         Upsample((2,)),
-        ConvTranspose((8,), 2000 => 4000, relu; pad=SamePad()),
+        ConvTranspose((12,), 2000 => 4000, relu; pad=SamePad()),
         Upsample((2,)),
-        ConvTranspose((8,), 4000 => 400; pad=SamePad()),
+        ConvTranspose((16,), 4000 => 400; pad=SamePad()),
     )
     return (encoder_μ, encoder_logvar, decoder)
 
@@ -98,7 +98,7 @@ function save_model(m, name)
     write_model_row("$name.arrow", model_row)
 end
 
-function train!(encoder_μ, encoder_logvar, decoder, train, validate, opt_enc_μ, opt_enc_logvar, opt_dec; num_epochs=100, dev=Flux.gpu)
+function train!(encoder_μ, encoder_logvar, decoder, train, validate, opt_enc_μ, opt_enc_logvar, opt_dec; num_epochs=100, dev=Flux.gpu, file_name)
     for e in 1:num_epochs
         for x in train
             x = x |> dev
@@ -116,12 +116,15 @@ function train!(encoder_μ, encoder_logvar, decoder, train, validate, opt_enc_μ
             Flux.update!(opt_dec, decoder, grad_dec)
 
         end
-        # for y in validate
-        #     y = y |> dev
-        #     validate_loss = vae_loss(encoder_μ, encoder_logvar, decoder, y)
-        #     @info "metrics" validate_loss = validate_loss
-        # end
+        for y in validate
+            y = y |> dev
+            validate_loss = vae_loss(encoder_μ, encoder_logvar, decoder, y)
+            @info "metrics" validate_loss = validate_loss
+        end
 
+        if e % 5 == 0
+            save_model(Chain(encoder_μ, encoder_logvar, decoder), "$file_name-$e")
+        end
         @info "metrics" epoch = e
     end
 end
@@ -144,11 +147,71 @@ function load_data(file_path, window_size)
 
 end
 
+function load_new_data(file_path, window_size)
+
+    df           = DataFrame(CSV.File(file_path; types=Float32, header=0))
+    windowed     = slidingwindow(Matrix(df), window_size, stride=1)
+    ts, vs       = splitobs(shuffleobs(windowed), 0.7)
+    ts_length    = length(ts)
+    vs_length    = length(vs)
+    train_set    = permutedims(reshape(reduce(hcat, ts), (400,window_size,ts_length)), (2,1,3))
+    validate_set = permutedims(reshape(reduce(hcat, vs), (400,window_size,vs_length)), (2,1,3))
+    train_loader = DataLoader(train_set; batchsize=48,shuffle=true)
+    validate_loader = DataLoader(validate_set; batchsize=48,shuffle=true)
+
+    (train_loader, validate_loader)
+
+end
+
 window_size = 60
 
 (train_loader, validate_loader) = load_data("$(datadir())/sims/$(get_config(logger, "data_set")).csv", window_size)
 
-num_epochs  = 100
+(train_loader, validate_loader) = load_new_data("$(datadir())/sims/vicsek-100-7.csv", window_size)
+
+    df = DataFrame(CSV.File("$(datadir())/sims/vicsek-100-7.csv", types=Float32, header=0))
+    windowed     = slidingwindow(Matrix(df), window_size, stride=1,obsdim=1)
+    ts, vs       = splitobs(shuffleobs(windowed), 0.7)
+    ts_length    = length(ts)
+    vs_length    = length(vs)
+    train_set    = reshape(reduce(hcat, ts), (window_size,400,ts_length))
+    validate_set = reshape(reduce(hcat, vs), (window_size,400,vs_length))
+    train_loader = DataLoader(train_set; batchsize=48,shuffle=true)
+    validate_loader = DataLoader(validate_set; batchsize=48,shuffle=true)
+
+ts[1]
+
+first(train_loader)[:,:,1]
+
+GC.gc()
+a = nothing
+
+
+a[:,:,1]
+first(windowed)
+
+
+
+dl = DataLoader(Iterators.flatten(Iterators.partition(Iterators.flatten(ts), ts_length))|>collect; batchsize=48,shuffle=true)
+
+first(dl)
+
+z = Iterators.partition(Iterators.flatten(ts), ts_length)
+
+
+
+
+reshape(z|>collect, (60,400,ts_length))
+first(z)
+
+first(dl)[1] |> size
+
+reshape(reduce(vcat,t), (400,window_size,ts_length))
+
+
+GC.gc()
+
+num_epochs = 20
 
 encoder_μ, encoder_logvar, decoder = create_vae() |> gpu
 
@@ -158,13 +221,13 @@ opt_enc_μ = Flux.setup(Adam(η), encoder_μ)
 opt_enc_logvar = Flux.setup(Adam(η), encoder_logvar)
 opt_dec = Flux.setup(Adam(η), decoder)
 
-train!(encoder_μ, encoder_logvar, decoder, train_loader, validate_loader, opt_enc_μ,opt_enc_logvar,opt_dec, num_epochs=num_epochs)
+train!(encoder_μ, encoder_logvar, decoder, train_loader, validate_loader, opt_enc_μ,opt_enc_logvar,opt_dec, num_epochs=num_epochs, file_name="vicsek-8")
 
 first(train_loader)
 
 close(logger)
 
-save_model(Chain(encoder_μ, encoder_logvar, decoder), "vicsek-model6")
+save_model(Chain(encoder_μ, encoder_logvar, decoder), "vicsek-model7")
 
 file_path = "$(datadir())/sims/$(get_config(logger, "data_set")).csv"
 
@@ -196,3 +259,13 @@ plot(
     Layout(xaxis_range=[0,1], yaxis_range=[0,1])
 )
 
+
+x = reshape(first(train_loader)[:,:,1], (60,400,1)) |> gpu
+μ = encoder_μ(x)
+logσ = encoder_logvar(x)
+z = μ + gpu(randn(Float32, size(logσ))) .* exp.(logσ)
+# Reconstruct from latent sample
+x̂ = decoder(z)
+
+
+Flux.Losses.mse(x̂, x)
